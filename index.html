@@ -1,0 +1,237 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Signature</title>
+<style>
+  :root { --bg:#f6f6f7; --card:#fff; --line:#e3e3e6; --text:#1d1d1f; --muted:#8a8a90; --accent:#2563eb; }
+  * { box-sizing: border-box; }
+  body { margin:0; background:var(--bg); color:var(--text); font:14px/1.4 system-ui,-apple-system,sans-serif; }
+  main { display:grid; grid-template-columns:minmax(300px,420px) 1fr; gap:20px; max-width:1100px; margin:0 auto; padding:20px 16px; }
+  @media (max-width:760px) { main { grid-template-columns:1fr; } }
+  .card { background:var(--card); border:1px solid var(--line); border-radius:10px; padding:16px; }
+  input[type=text], input[type=url], input[type=email], input[type=tel] {
+    width:100%; padding:8px 10px; border:1px solid var(--line); border-radius:6px; font:inherit; background:#fff; color:inherit;
+  }
+  input:focus { outline:2px solid var(--accent); outline-offset:-1px; border-color:transparent; }
+  .stack { display:grid; gap:8px; }
+  .row { display:flex; gap:6px; align-items:center; }
+  .row > input { flex:1; min-width:0; }
+  hr { border:0; border-top:1px solid var(--line); margin:14px 0; }
+  button { font:inherit; cursor:pointer; border:1px solid var(--line); background:#fff; border-radius:6px; padding:7px 12px; color:inherit; }
+  button:hover { background:#f2f2f4; }
+  button.primary { background:var(--accent); border-color:var(--accent); color:#fff; }
+  button.primary:hover { filter:brightness(1.08); }
+  .x { border:0; background:none; color:var(--muted); font-size:18px; padding:0 6px; line-height:1; }
+  .x:hover { color:#d33; background:none; }
+  .socials { display:flex; gap:6px; flex-wrap:wrap; }
+  .soc { padding:6px; line-height:0; }
+  .soc img { width:20px; height:20px; opacity:.35; }
+  .soc.on { border-color:var(--accent); background:#eef3ff; }
+  .soc.on img { opacity:1; }
+  .color { width:34px; height:34px; padding:0; border:1px solid var(--line); border-radius:6px; background:none; cursor:pointer; }
+  .divider { height:34px; padding:0 6px; border:1px solid var(--line); border-radius:6px; font:inherit; background:#fff; color:inherit; cursor:pointer; }
+  .preview { position:sticky; top:20px; align-self:start; }
+  .sig { padding:20px; border:1px dashed var(--line); border-radius:8px; background:#fff; overflow-x:auto; min-height:120px; }
+  .actions { display:flex; gap:8px; justify-content:flex-end; margin-top:12px; }
+</style>
+</head>
+<body>
+<main>
+  <section class="card">
+    <div class="stack">
+      <div class="row">
+        <input id="site" type="url" placeholder="Website (logo pulled from here)">
+        <input id="color" class="color" type="color" value="#2563eb" title="Accent">
+        <input id="dividerColor" class="color" type="color" value="#2563eb" title="Divider color">
+        <select id="divider" class="divider" title="Divider weight">
+          <option value="0">0px</option><option value="1">1px</option><option value="2">2px</option>
+          <option value="3">3px</option><option value="4">4px</option>
+        </select>
+      </div>
+      <input id="name" type="text" placeholder="Name">
+      <input id="title" type="text" placeholder="Title">
+      <input id="company" type="text" placeholder="Company">
+      <input id="email" type="email" placeholder="Email">
+      <input id="phone" type="tel" placeholder="Phone">
+      <div id="custom" class="stack"></div>
+      <div><button id="addField">+ Field</button></div>
+    </div>
+    <hr>
+    <div class="socials" id="socialToggles"></div>
+    <div class="stack" id="socialInputs" style="margin-top:8px"></div>
+  </section>
+
+  <section class="preview">
+    <div class="card">
+      <div class="sig" id="sig"></div>
+      <div class="actions">
+        <button id="copyHtml">Copy code</button>
+        <button id="copy" class="primary">Copy signature</button>
+      </div>
+    </div>
+  </section>
+</main>
+
+<script>
+const SOCIALS = [
+  { id:'linkedin',  label:'LinkedIn',  icon:'linkedin' },
+  { id:'x',         label:'X',         icon:'twitterx' },
+  { id:'instagram', label:'Instagram', icon:'instagram-new' },
+  { id:'facebook',  label:'Facebook',  icon:'facebook-new' },
+  { id:'youtube',   label:'YouTube',   icon:'youtube-play' },
+  { id:'github',    label:'GitHub',    icon:'github' },
+];
+const iconUrl = (icon, hex = '555555') => `https://img.icons8.com/windows/50/${hex}/${icon}.png`;
+
+const FIELDS = ['site','name','title','company','email','phone','color','dividerColor','divider'];
+const KEY = 'sig-gen-v1';
+let state = load();
+
+function load() {
+  const base = { site:'', name:'', title:'', company:'', email:'', phone:'', color:'#2563eb', divider:'2', dividerColor:'#2563eb', custom:[], social:{} };
+  try { return { ...base, ...JSON.parse(localStorage.getItem(KEY) || '{}') }; } catch { return base; }
+}
+function save() { try { localStorage.setItem(KEY, JSON.stringify(state)); } catch {} }
+
+const $ = id => document.getElementById(id);
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const normUrl = u => { u = (u || '').trim(); return !u ? '' : /^https?:\/\//i.test(u) ? u : 'https://' + u; };
+const host = u => { try { return new URL(normUrl(u)).hostname.replace(/^www\./, ''); } catch { return ''; } };
+
+function logoFor(site) {
+  const u = normUrl(site);
+  if (!u) return '';
+  if (/\.(png|jpe?g|gif|webp|svg)(\?.*)?$/i.test(u)) return u; // direct image URL
+  const h = host(u);
+  return h ? `https://www.google.com/s2/favicons?domain=${encodeURIComponent(h)}&sz=128` : '';
+}
+
+/* ---------- form ---------- */
+FIELDS.forEach(f => {
+  $(f).value = state[f];
+  $(f).addEventListener('input', e => { state[f] = e.target.value; update(); });
+});
+
+function renderCustom() {
+  const wrap = $('custom');
+  wrap.innerHTML = '';
+  state.custom.forEach((c, i) => {
+    const row = document.createElement('div');
+    row.className = 'row';
+    row.innerHTML = `<input type="text" placeholder="Label" style="flex:0 0 32%">
+                     <input type="text" placeholder="Value">
+                     <button class="x" title="Remove">×</button>`;
+    const [l, v] = row.querySelectorAll('input');
+    l.value = c.label; v.value = c.value;
+    l.oninput = e => { c.label = e.target.value; update(); };
+    v.oninput = e => { c.value = e.target.value; update(); };
+    row.querySelector('button').onclick = () => { state.custom.splice(i, 1); renderCustom(); update(); };
+    wrap.appendChild(row);
+  });
+}
+$('addField').onclick = () => {
+  state.custom.push({ label:'', value:'' });
+  renderCustom(); update();
+  $('custom').lastElementChild.querySelector('input').focus();
+};
+
+function renderSocial() {
+  const toggles = $('socialToggles'), inputs = $('socialInputs');
+  toggles.innerHTML = ''; inputs.innerHTML = '';
+  SOCIALS.forEach(s => {
+    const st = state.social[s.id] ||= { on:false, url:'' };
+    const b = document.createElement('button');
+    b.className = 'soc' + (st.on ? ' on' : '');
+    b.title = s.label;
+    b.innerHTML = `<img src="${iconUrl(s.icon, '1d1d1f')}" alt="${s.label}">`;
+    b.onclick = () => {
+      st.on = !st.on; renderSocial(); update();
+      if (st.on) inputs.querySelector(`[data-id="${s.id}"]`)?.focus();
+    };
+    toggles.appendChild(b);
+    if (st.on) {
+      const row = document.createElement('div');
+      row.className = 'row';
+      row.innerHTML = `<img src="${iconUrl(s.icon, '8a8a90')}" width="18" height="18" alt="">
+                       <input type="url" data-id="${s.id}" placeholder="${s.label} URL">`;
+      const inp = row.querySelector('input');
+      inp.value = st.url;
+      inp.oninput = e => { st.url = e.target.value; update(); };
+      inputs.appendChild(row);
+    }
+  });
+}
+
+/* ---------- signature ---------- */
+function buildSignature() {
+  const s = state, color = s.color || '#2563eb', hex = color.replace('#', '');
+  const link = `color:${color};text-decoration:none;`;
+  const logo = logoFor(s.site), siteUrl = normUrl(s.site);
+  const lines = [];
+
+  if (s.name)  lines.push(`<div style="font-size:16px;font-weight:bold;color:#111111;">${esc(s.name)}</div>`);
+  if (s.title)   lines.push(`<div style="color:#555555;">${esc(s.title)}</div>`);
+  if (s.company) lines.push(`<div style="color:#555555;">${esc(s.company)}</div>`);
+
+  const contact = [];
+  if (s.email) contact.push(`<a href="mailto:${esc(s.email.trim())}" style="${link}">${esc(s.email)}</a>`);
+  if (s.phone) contact.push(`<a href="tel:${esc(s.phone.replace(/[^\d+]/g, ''))}" style="${link}">${esc(s.phone)}</a>`);
+  s.custom.filter(c => c.value).forEach(c =>
+    contact.push(c.label ? `<span style="color:#888888;">${esc(c.label)}:</span> ${esc(c.value)}` : esc(c.value)));
+  if (siteUrl && !/\.(png|jpe?g|gif|webp|svg)(\?.*)?$/i.test(siteUrl))
+    contact.push(`<a href="${esc(siteUrl)}" style="${link}">${esc(host(siteUrl))}</a>`);
+  if (contact.length) lines.push(`<div style="margin-top:6px;">${contact.map(c => `<div>${c}</div>`).join('')}</div>`);
+
+  const socials = SOCIALS.filter(x => s.social[x.id]?.on && s.social[x.id].url.trim())
+    .map(x => `<a href="${esc(normUrl(s.social[x.id].url))}" style="text-decoration:none;margin-right:6px;"><img src="${iconUrl(x.icon, hex)}" width="18" height="18" alt="${x.label}" style="display:inline-block;border:0;vertical-align:middle;"></a>`);
+  if (socials.length) lines.push(`<div style="margin-top:8px;">${socials.join('')}</div>`);
+
+  if (!lines.length && !logo) return '';
+
+  const logoCell = logo
+    ? `<td style="padding-right:14px;vertical-align:top;${+s.divider ? `border-right:${+s.divider}px solid ${s.dividerColor || color};` : ''}">${siteUrl ? `<a href="${esc(siteUrl)}">` : ''}<img src="${esc(logo)}" width="64" alt="${esc(s.company || 'Logo')}" style="display:block;border:0;max-width:64px;height:auto;">${siteUrl ? '</a>' : ''}</td>`
+    : '';
+  return `<table cellpadding="0" cellspacing="0" border="0" style="font-family:Arial,Helvetica,sans-serif;font-size:13px;line-height:1.45;color:#333333;border-collapse:collapse;"><tr>${logoCell}<td style="${logo ? 'padding-left:14px;' : ''}vertical-align:top;">${lines.join('')}</td></tr></table>`;
+}
+
+function update() {
+  document.documentElement.style.setProperty('--accent', state.color);
+  $('sig').innerHTML = buildSignature();
+  save();
+}
+
+/* ---------- copy ---------- */
+function flash(btn, text) {
+  const orig = btn.textContent; btn.textContent = text;
+  setTimeout(() => btn.textContent = orig, 1200);
+}
+// Copy as rich text (what Gmail's signature editor expects), not as code.
+$('copy').onclick = () => {
+  const html = buildSignature(), text = $('sig').innerText;
+  const onCopy = e => {
+    e.clipboardData.setData('text/html', html);
+    e.clipboardData.setData('text/plain', text);
+    e.preventDefault();
+  };
+  document.addEventListener('copy', onCopy);
+  // Select the rendered preview too, so browsers that ignore setData still copy rich content.
+  const sel = getSelection(), r = document.createRange();
+  r.selectNodeContents($('sig')); sel.removeAllRanges(); sel.addRange(r);
+  const ok = document.execCommand('copy');
+  sel.removeAllRanges();
+  document.removeEventListener('copy', onCopy);
+  flash($('copy'), ok ? 'Copied' : 'Failed');
+};
+$('copyHtml').onclick = async () => {
+  try { await navigator.clipboard.writeText(buildSignature()); flash($('copyHtml'), 'Copied'); }
+  catch { flash($('copyHtml'), 'Failed'); }
+};
+
+renderCustom();
+renderSocial();
+update();
+</script>
+</body>
+</html>
